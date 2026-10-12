@@ -1,4 +1,3 @@
-
 package Main;
 
 import java.awt.*;
@@ -23,7 +22,7 @@ public class Enemy {
     private int direction = 0;
 
     // Animation states
-    private enum State{
+    private enum State {
         IDLE,
         WALK,
         ATTACK,
@@ -41,6 +40,11 @@ public class Enemy {
     // Stats
     private int speed = 2;
     private int health = 3;
+    private static final int MAX_HEALTH = 3;
+
+    // Health bar is shown briefly after taking damage.
+    private long healthBarUntil = 0;
+    private static final long HEALTH_BAR_DURATION = 1500;
 
     // AI
     private long lastAttack = 0;
@@ -48,48 +52,57 @@ public class Enemy {
     private final int ATTACK_RADIUS = 42;
     private int attackTimer = 0;
 
-    // Zombie ambient growl timing
-    private long nextGrowlTime = 0;
-    
-    public Enemy(int x){
+    // Chapter 2 pathfinding
+    private Point pathTarget = null;
+    private long lastPathUpdate = 0;
+
+    public Enemy(int x) {
 
         this.x = x;
         this.y = 280;
 
-        try{
+        try {
+
             sheet = ImageIO.read(
-                getClass().getResource("/assets/zombie_sheet.png"));
-        }catch(Exception e){
+                    getClass().getResource(
+                            "/assets/zombie_sheet.png"
+                    )
+            );
+
+        } catch (Exception e) {
+
             e.printStackTrace();
         }
-
-        // First ambient growl after a short delay
-        nextGrowlTime = System.currentTimeMillis() + 3000 + (long)(Math.random() * 3000);
     }
 
-    public void update(Player player){
+    // =========================================================
+    // CHAPTER 1 UPDATE
+    // =========================================================
+    //
+    // DO NOT CHANGE THIS BEHAVIOR.
+    // Chapter 1 still uses this method.
+    //
+    // =========================================================
 
-        if(dead) return;
+    public void update(Player player) {
+
+        if (dead)
+            return;
 
         // ================= DEATH =================
 
-        if(dying){
+        if (dying) {
+
             state = State.DEAD;
+
             animate();
+
             return;
         }
 
-        // ================= AMBIENT GROWL =================
-        long now = System.currentTimeMillis();
-        if(now >= nextGrowlTime && attackTimer <= 0){
-            SoundManager.play("zombie_growl.wav");
-            nextGrowlTime = now + 3000 + (long)(Math.random() * 4000);
-        }
-
         // ================= ATTACK LOCK =================
-        // Prevent WALK/IDLE from interrupting the bite animation.
 
-        if(attackTimer > 0){
+        if (attackTimer > 0) {
 
             attackTimer--;
 
@@ -100,18 +113,21 @@ public class Enemy {
             return;
         }
 
-        // ================= DISTANCE =================
-
         int dx = player.x - x;
         int dy = player.y - y;
 
-        double dist = Math.sqrt(dx * dx + dy * dy);
+        double dist =
+                Math.sqrt(
+                        dx * dx +
+                        dy * dy
+                );
 
         boolean moving = false;
 
         // ================= CHASE =================
 
-        if(dist < CHASE_RADIUS && dist > ATTACK_RADIUS){
+        if (dist < CHASE_RADIUS &&
+            dist > ATTACK_RADIUS) {
 
             moving = true;
 
@@ -120,69 +136,70 @@ public class Enemy {
 
             final int DIRECTION_THRESHOLD = 8;
 
-            if(absDx > absDy + DIRECTION_THRESHOLD){
+            if (absDx >
+                absDy + DIRECTION_THRESHOLD) {
 
-                // HORIZONTAL
+                if (dx > 0) {
 
-                if(dx > 0){
                     x += speed;
-                    direction = 2; // RIGHT
-                }else{
+                    direction = 2;
+
+                } else {
+
                     x -= speed;
-                    direction = 1; // LEFT
+                    direction = 1;
                 }
 
-            }else if(absDy > absDx + DIRECTION_THRESHOLD){
+            } else if (
+                    absDy >
+                    absDx + DIRECTION_THRESHOLD) {
 
-                // VERTICAL
+                if (dy > 0) {
 
-                if(dy > 0){
                     y += speed;
-                    direction = 0; // DOWN
-                }else{
+                    direction = 0;
+
+                } else {
+
                     y -= speed;
-                    direction = 3; // UP
+                    direction = 3;
                 }
 
-            }else{
+            } else {
 
-                // VERY DIAGONAL
-                // Keep the previous direction.
-                // This prevents rapid direction switching.
-                
-                switch(direction){
+                switch (direction) {
 
-                    case 0: // DOWN
+                    case 0:
                         y += speed;
                         break;
 
-                    case 1: // LEFT
+                    case 1:
                         x -= speed;
                         break;
 
-                    case 2: // RIGHT
+                    case 2:
                         x += speed;
                         break;
 
-                    case 3: // UP
+                    case 3:
                         y -= speed;
                         break;
                 }
             }
-            }
-        
+        }
 
         // ================= NORMAL STATE =================
+        //
+        // ATTACK is triggered ONLY by canAttack().
+        // Do not select ATTACK just because Ethan is inside the
+        // attack radius; doing that makes the bite animation loop
+        // and look like a twitch.
 
-        if(dist <= ATTACK_RADIUS){
-
-            state = State.ATTACK;
-
-        }else if(moving){
+        if (moving) {
 
             state = State.WALK;
 
-        }else{
+        } else {
 
             state = State.IDLE;
         }
@@ -190,48 +207,424 @@ public class Enemy {
         animate();
     }
 
-    private void animate(){
+    // =========================================================
+    // CHAPTER 2 UPDATE WITH BUILDING NAVIGATION
+    // =========================================================
+
+    public void update(Player player, Map map) {
+
+        if (dead)
+            return;
+
+        // ================= DEATH =================
+
+        if (dying) {
+
+            state = State.DEAD;
+
+            animate();
+
+            return;
+        }
+
+        // ================= ATTACK LOCK =================
+
+        if (attackTimer > 0) {
+
+            attackTimer--;
+
+            state = State.ATTACK;
+
+            animate();
+
+            return;
+        }
+
+        int playerDX = player.x - x;
+        int playerDY = player.y - y;
+
+        double playerDistance =
+                Math.sqrt(
+                        playerDX * playerDX +
+                        playerDY * playerDY
+                );
+
+        boolean investigatingNoise =
+                playerDistance > CHASE_RADIUS
+                && NoiseSystem.shouldInvestigate(
+                        x + width / 2,
+                        y + height / 2
+                );
+
+        int targetX = investigatingNoise
+                ? NoiseSystem.getNoiseX()
+                : player.x;
+
+        int targetY = investigatingNoise
+                ? NoiseSystem.getNoiseY()
+                : player.y;
+
+        int dx = targetX - x;
+        int dy = targetY - y;
+
+        double dist =
+                Math.sqrt(
+                        dx * dx +
+                        dy * dy
+                );
+
+        boolean moving = false;
+
+        long now = System.currentTimeMillis();
+
+        // =====================================================
+        // CHASE
+        // =====================================================
+
+        if ((investigatingNoise && dist > 16)
+                || (!investigatingNoise
+                    && playerDistance < CHASE_RADIUS
+                    && playerDistance > ATTACK_RADIUS)) {
+
+            int absDx = Math.abs(dx);
+            int absDy = Math.abs(dy);
+
+            boolean moved = false;
+
+            // -------------------------------------------------
+            // Try dominant direction first
+            // -------------------------------------------------
+
+            if (absDx > absDy) {
+
+                if (dx > 0) {
+
+                    moved = moveX(
+                            speed,
+                            map
+                    );
+
+                    if (moved)
+                        direction = 2;
+
+                } else {
+
+                    moved = moveX(
+                            -speed,
+                            map
+                    );
+
+                    if (moved)
+                        direction = 1;
+                }
+
+            } else {
+
+                if (dy > 0) {
+
+                    moved = moveY(
+                            speed,
+                            map
+                    );
+
+                    if (moved)
+                        direction = 0;
+
+                } else {
+
+                    moved = moveY(
+                            -speed,
+                            map
+                    );
+
+                    if (moved)
+                        direction = 3;
+                }
+            }
+
+            // -------------------------------------------------
+            // Try other axis
+            // -------------------------------------------------
+
+            if (!moved) {
+
+                if (absDx > absDy) {
+
+                    if (dy > 0) {
+
+                        moved =
+                                moveY(
+                                        speed,
+                                        map
+                                );
+
+                        if (moved)
+                            direction = 0;
+
+                    } else {
+
+                        moved =
+                                moveY(
+                                        -speed,
+                                        map
+                                );
+
+                        if (moved)
+                            direction = 3;
+                    }
+
+                } else {
+
+                    if (dx > 0) {
+
+                        moved =
+                                moveX(
+                                        speed,
+                                        map
+                                );
+
+                        if (moved)
+                            direction = 2;
+
+                    } else {
+
+                        moved =
+                                moveX(
+                                        -speed,
+                                        map
+                                );
+
+                        if (moved)
+                            direction = 1;
+                    }
+                }
+            }
+
+            // -------------------------------------------------
+            // WALL BLOCKED
+            // FIND DOORWAY
+            // -------------------------------------------------
+
+            if (!moved) {
+
+                if (pathTarget == null ||
+                    now - lastPathUpdate > 250 ||
+                    distanceToPathTarget() < 10) {
+
+                    pathTarget =
+                            ZombiePathfinder.findNextStep(
+                                    map,
+                                    x,
+                                    y,
+                                    targetX,
+                                    targetY,
+                                    12,
+                                    20,
+                                    40,
+                                    40
+                            );
+
+                    lastPathUpdate = now;
+                }
+
+                if (pathTarget != null) {
+
+                    int pathDX =
+                            pathTarget.x - x;
+
+                    int pathDY =
+                            pathTarget.y - y;
+
+                    if (Math.abs(pathDX) >
+                        Math.abs(pathDY)) {
+
+                        if (pathDX > 0) {
+
+                            if (moveX(speed, map))
+                                direction = 2;
+
+                        } else {
+
+                            if (moveX(-speed, map))
+                                direction = 1;
+                        }
+
+                    } else {
+
+                        if (pathDY > 0) {
+
+                            if (moveY(speed, map))
+                                direction = 0;
+
+                        } else {
+
+                            if (moveY(-speed, map))
+                                direction = 3;
+                        }
+                    }
+                }
+
+                moving = true;
+
+            } else {
+
+                moving = true;
+            }
+        }
+
+        // ================= STATE =================
+
+        if (dist <= ATTACK_RADIUS) {
+
+            // Attack animation is started by canAttack(), not by distance alone.
+            state = State.IDLE;
+            frame = 0;
+            tick = 0;
+
+        } else if (moving) {
+
+            state = State.WALK;
+
+        } else {
+
+            state = State.IDLE;
+        }
+
+        animate();
+    }
+
+    // =========================================================
+    // MOVE X
+    // =========================================================
+
+    private boolean moveX(
+            int amount,
+            Map map
+    ) {
+
+        Rectangle testBounds =
+                new Rectangle(
+                        x + amount + 12,
+                        y + 20,
+                        40,
+                        40
+                );
+
+        if (map.collidesWithBuilding(
+                testBounds)) {
+
+            return false;
+        }
+
+        x += amount;
+
+        return true;
+    }
+
+    // =========================================================
+    // MOVE Y
+    // =========================================================
+
+    private boolean moveY(
+            int amount,
+            Map map
+    ) {
+
+        Rectangle testBounds =
+                new Rectangle(
+                        x + 12,
+                        y + amount + 20,
+                        40,
+                        40
+                );
+
+        if (map.collidesWithBuilding(
+                testBounds)) {
+
+            return false;
+        }
+
+        y += amount;
+
+        return true;
+    }
+
+    // =========================================================
+    // PATH DISTANCE
+    // =========================================================
+
+    private double distanceToPathTarget() {
+
+        if (pathTarget == null)
+            return Double.MAX_VALUE;
+
+        int dx =
+                pathTarget.x - x;
+
+        int dy =
+                pathTarget.y - y;
+
+        return Math.sqrt(
+                dx * dx +
+                dy * dy
+        );
+    }
+
+    // =========================================================
+    // ANIMATION
+    // =========================================================
+
+    private void animate() {
 
         tick++;
 
-        switch(state){
+        switch (state) {
 
-            case IDLE ->{
+            case IDLE -> {
 
-                if(tick >= 18){
-                    frame = (frame + 1) % 2;
+                if (tick >= 18) {
+
+                    frame =
+                            (frame + 1) % 2;
+
                     tick = 0;
                 }
             }
 
-            case WALK ->{
+            case WALK -> {
 
-                if(tick >= 8){
-                    frame = (frame + 1) % 4;
+                if (tick >= 8) {
+
+                    frame =
+                            (frame + 1) % 4;
+
                     tick = 0;
                 }
             }
 
-            case ATTACK ->{
+            case ATTACK -> {
 
-                if(tick >= 10){
+                if (tick >= 10) {
+
                     frame++;
 
-                    if(frame >= 2){
+                    if (frame >= 2)
                         frame = 0;
-                    }
 
                     tick = 0;
                 }
             }
 
-            case DEAD ->{
+            case DEAD -> {
 
-                if(tick >= 8){
+                if (tick >= 8) {
 
-                    if(frame < 5){
+                    if (frame < 5) {
+
                         frame++;
-                    }else{
+
+                    } else {
+
                         dead = true;
                     }
 
@@ -241,69 +634,95 @@ public class Enemy {
         }
     }
 
-    public boolean canAttack(Player player){
+    // =========================================================
+    // ATTACK
+    // =========================================================
 
-        if(dead || dying) return false;
+    public boolean canAttack(
+            Player player
+    ) {
+
+        if (dead || dying)
+            return false;
 
         Rectangle attackBox;
 
-        switch(direction){
+        switch (direction) {
 
-            case 0: // DOWN
-                attackBox = new Rectangle(
-                    x + 16,
-                    y + 28,
-                    32,
-                    28
-                );
+            case 0:
+
+                attackBox =
+                        new Rectangle(
+                                x + 16,
+                                y + 28,
+                                32,
+                                28
+                        );
+
                 break;
 
-            case 1: // LEFT
-                attackBox = new Rectangle(
-                    x - 4,
-                    y + 18,
-                    28,
-                    30
-                );
+            case 1:
+
+                attackBox =
+                        new Rectangle(
+                                x - 4,
+                                y + 18,
+                                28,
+                                30
+                        );
+
                 break;
 
-            case 2: // RIGHT
-                attackBox = new Rectangle(
-                    x + 40,
-                    y + 18,
-                    28,
-                    30
-                );
+            case 2:
+
+                attackBox =
+                        new Rectangle(
+                                x + 40,
+                                y + 18,
+                                28,
+                                30
+                        );
+
                 break;
 
-            case 3: // UP
-                attackBox = new Rectangle(
-                    x + 16,
-                    y - 4,
-                    32,
-                    28
-                );
+            case 3:
+
+                attackBox =
+                        new Rectangle(
+                                x + 16,
+                                y - 4,
+                                32,
+                                28
+                        );
+
                 break;
 
             default:
                 return false;
         }
 
-        // Player must actually be inside the zombie's bite area
-        if(!attackBox.intersects(player.getBounds()))
+        if (!attackBox.intersects(
+                player.getBounds())) {
+
             return false;
+        }
 
-        long now = System.currentTimeMillis();
+        long now =
+                System.currentTimeMillis();
 
-        if(now - lastAttack >= 1000){
+        if (now - lastAttack >= 1000) {
 
             lastAttack = now;
 
-            SoundManager.play("zombie_bite.wav");
+            SoundManager.play(
+                    "zombie_bite.wav"
+            );
 
             state = State.ATTACK;
+
             frame = 0;
             tick = 0;
+
             attackTimer = 20;
 
             return true;
@@ -312,71 +731,195 @@ public class Enemy {
         return false;
     }
 
-    public void takeDamage(){
+    // =========================================================
+    // DAMAGE
+    // =========================================================
 
-        if(dead || dying) return;
+    public void takeDamage() {
+
+        if (dead || dying)
+            return;
 
         health--;
 
-        if(health <= 0){
+        healthBarUntil =
+                System.currentTimeMillis()
+                + HEALTH_BAR_DURATION;
+
+        if (health <= 0) {
 
             dying = true;
+
             state = State.DEAD;
+
             frame = 0;
             tick = 0;
         }
     }
 
-    public boolean isDead(){
+    // =========================================================
+    // DEAD
+    // =========================================================
+
+    public boolean isDead() {
+
         return dead;
     }
 
-    public Rectangle getBounds(){
+    // =========================================================
+    // BOUNDS
+    // =========================================================
+
+    public Rectangle getBounds() {
 
         hitbox.setBounds(
-            x + 12,
-            y + 20,
-            40,
-            40
+                x + 12,
+                y + 20,
+                40,
+                40
         );
 
         return hitbox;
     }
 
-    public void draw(Graphics2D g2){
+    // =========================================================
+    // DRAW
+    // =========================================================
 
-        if(dead || sheet == null) return;
+    private void drawHealthBar(Graphics2D g2) {
+
+        if (dead || dying)
+            return;
+
+        if (System.currentTimeMillis() > healthBarUntil)
+            return;
+
+        final int barWidth = 42;
+        final int barHeight = 5;
+
+        int barX = x + (width - barWidth) / 2;
+        int barY = y - 8;
+
+        // Background
+        g2.setColor(Color.BLACK);
+        g2.fillRect(
+                barX,
+                barY,
+                barWidth,
+                barHeight
+        );
+
+        // Current health
+        int currentWidth =
+                (int) (
+                        barWidth
+                        * (health / (double) MAX_HEALTH)
+                );
+
+        if (currentWidth > 0) {
+
+            g2.setColor(Color.GREEN);
+            g2.fillRect(
+                    barX,
+                    barY,
+                    currentWidth,
+                    barHeight
+            );
+        }
+
+        // Border
+        g2.setColor(Color.WHITE);
+        g2.drawRect(
+                barX,
+                barY,
+                barWidth - 1,
+                barHeight - 1
+        );
+    }
+
+    public void draw(Graphics2D g2) {
+
+        if (dead ||
+            sheet == null) {
+
+            return;
+        }
 
         int row = 0;
         int col = 0;
 
-        switch(state){
+        switch (state) {
 
-            case IDLE ->{
+            case IDLE -> {
 
-                if(direction == 0){ row = 0; col = frame; }
-                if(direction == 1){ row = 0; col = 2 + frame; }
-                if(direction == 2){ row = 0; col = 4 + frame; }
-                if(direction == 3){ row = 4; col = frame; }
+                if (direction == 0) {
+                    row = 0;
+                    col = frame;
+                }
+
+                if (direction == 1) {
+                    row = 0;
+                    col = 2 + frame;
+                }
+
+                if (direction == 2) {
+                    row = 0;
+                    col = 4 + frame;
+                }
+
+                if (direction == 3) {
+                    row = 4;
+                    col = frame;
+                }
             }
 
-            case WALK ->{
+            case WALK -> {
 
-                if(direction == 0){ row = 1; col = frame; }
-                if(direction == 1){ row = 2; col = frame; }
-                if(direction == 2){ row = 3; col = frame; }
-                if(direction == 3){ row = 4; col = frame; }
+                if (direction == 0) {
+                    row = 1;
+                    col = frame;
+                }
+
+                if (direction == 1) {
+                    row = 2;
+                    col = frame;
+                }
+
+                if (direction == 2) {
+                    row = 3;
+                    col = frame;
+                }
+
+                if (direction == 3) {
+                    row = 4;
+                    col = frame;
+                }
             }
 
-            case ATTACK ->{
+            case ATTACK -> {
 
-                if(direction == 0){ row = 1; col = 4 + frame; }
-                if(direction == 1){ row = 2; col = 4 + frame; }
-                if(direction == 2){ row = 3; col = 4 + frame; }
-                if(direction == 3){ row = 4; col = 4 + frame; }
+                if (direction == 0) {
+                    row = 1;
+                    col = 4 + frame;
+                }
+
+                if (direction == 1) {
+                    row = 2;
+                    col = 4 + frame;
+                }
+
+                if (direction == 2) {
+                    row = 3;
+                    col = 4 + frame;
+                }
+
+                if (direction == 3) {
+                    row = 4;
+                    col = 4 + frame;
+                }
             }
 
-            case DEAD ->{
+            case DEAD -> {
 
                 row = 5;
                 col = frame;
@@ -384,15 +927,21 @@ public class Enemy {
         }
 
         g2.drawImage(
-            sheet,
-            x, y,
-            x + width,
-            y + height,
-            col * 64,
-            row * 64,
-            (col + 1) * 64,
-            (row + 1) * 64,
-            null
+                sheet,
+
+                x,
+                y,
+                x + width,
+                y + height,
+
+                col * 64,
+                row * 64,
+
+                (col + 1) * 64,
+                (row + 1) * 64,
+
+                null
         );
+        drawHealthBar(g2);
     }
 }

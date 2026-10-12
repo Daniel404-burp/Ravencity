@@ -1,5 +1,8 @@
 package Main;
 
-public class ItemType {
+public enum ItemType {
 
+    AMMO,
+    HEALING,
+    KEY
 }

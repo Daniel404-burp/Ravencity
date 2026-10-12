@@ -3,160 +3,292 @@ package Main;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
+
 import javax.imageio.ImageIO;
 
 public class Player {
 
-    // Position
+    // ================= POSITION =================
+
     public int x, y;
+
     public final int width = 64;
     public final int height = 64;
 
-    // Stats
+
+    // ================= STATS =================
+
     public int health = 100;
+
     public int speed = 4;
 
-    // Ammo
+    public void setSpeed(int speed) {
+        this.speed = speed;
+    }
+
+
+    // ================= AMMO =================
+
     public final int MAG_SIZE = 8;
+
     public int ammo = 8;
+
     public int reserveAmmo = 24;
+
     public boolean hasGun = true;
 
-    // Sprite
+
+    // ================= INVENTORY =================
+
+    private Inventory inventory;
+
+
+    // ================= SPRITE =================
+
     private BufferedImage sheet;
 
-    // 0=Down 1=Left 2=Right 3=Up
+
+    // 0 = Down
+    // 1 = Left
+    // 2 = Right
+    // 3 = Up
+
     private int direction = 0;
 
-    private enum State{
-        IDLE, WALK, SHOOT, DEAD
+
+    // ================= STATE =================
+
+    private enum State {
+
+        IDLE,
+        WALK,
+        SHOOT,
+        DEAD
     }
+
 
     private State state = State.IDLE;
 
+
+    // ================= ANIMATION =================
+
     private int frame = 0;
+
     private int tick = 0;
 
+
+    // ================= FLAGS =================
+
     private boolean moving = false;
+
     private boolean shooting = false;
+
     private boolean dead = false;
 
-    // NEW: Footstep timer
+
+    // ================= FOOTSTEP =================
+
     private int footstepTimer = 0;
 
-    public Player(int x, int y){
+
+    // ================= CONSTRUCTOR =================
+
+    public Player(int x, int y) {
 
         this.x = x;
+
         this.y = y;
 
-        try{
+        // Create Ethan's inventory
+        inventory = new Inventory();
+
+
+        try {
+
             sheet = ImageIO.read(
-                getClass().getResource("/assets/ethan_gun_sheet.png"));
-        }catch(Exception e){
+                    getClass().getResource(
+                            "/assets/ethan_gun_sheet.png"
+                    )
+            );
+
+        } catch (Exception e) {
+
             e.printStackTrace();
         }
     }
 
+
     // ================= UPDATE =================
 
-    public void update(boolean[] keys){
+    public void update(boolean[] keys) {
 
-        if(dead){
+        if (dead) {
+
             animate();
+
             return;
         }
 
+
         moving = false;
 
-        if(keys[KeyEvent.VK_W]){
+
+        // =========================
+        // MOVEMENT
+        // =========================
+
+        if (keys[KeyEvent.VK_W]) {
+
             y -= speed;
+
             direction = 3;
+
             moving = true;
         }
 
-        if(keys[KeyEvent.VK_S]){
+
+        if (keys[KeyEvent.VK_S]) {
+
             y += speed;
+
             direction = 0;
+
             moving = true;
         }
 
-        if(keys[KeyEvent.VK_A]){
+
+        if (keys[KeyEvent.VK_A]) {
+
             x -= speed;
+
             direction = 1;
+
             moving = true;
         }
 
-        if(keys[KeyEvent.VK_D]){
+
+        if (keys[KeyEvent.VK_D]) {
+
             x += speed;
+
             direction = 2;
+
             moving = true;
         }
 
-        State newState = shooting ? State.SHOOT : (moving ? State.WALK : State.IDLE);
 
-        if(newState != state){
+        // =========================
+        // ANIMATION STATE
+        // =========================
+
+        State newState =
+                shooting
+                        ? State.SHOOT
+                        : (moving
+                                ? State.WALK
+                                : State.IDLE);
+
+
+        if (newState != state) {
+
             state = newState;
+
             frame = 0;
+
             tick = 0;
         }
 
+
         animate();
 
-        // ========= FOOTSTEP SOUND =========
-        if(moving && !shooting){
+
+        // =========================
+        // FOOTSTEP SOUND
+        // =========================
+
+        if (moving && !shooting) {
 
             footstepTimer++;
 
-            if(footstepTimer >= 20){
-                SoundManager.play("walk.wav");
+
+            if (footstepTimer >= 20) {
+
+                SoundManager.play(
+                        "walk.wav"
+                );
+
                 footstepTimer = 0;
             }
 
-        }else{
+        } else {
+
             footstepTimer = 0;
         }
     }
 
+
     // ================= ANIMATION =================
 
-    private void animate(){
+    private void animate() {
 
         tick++;
 
-        switch(state){
+
+        switch (state) {
 
             case IDLE -> {
-                if(tick >= 18){
-                    frame = (frame + 1) % 2;
+
+                if (tick >= 18) {
+
+                    frame =
+                            (frame + 1) % 2;
+
                     tick = 0;
                 }
             }
+
 
             case WALK -> {
-                if(tick >= 8){
-                    frame = (frame + 1) % 4;
+
+                if (tick >= 8) {
+
+                    frame =
+                            (frame + 1) % 4;
+
                     tick = 0;
                 }
             }
 
+
             case SHOOT -> {
-                if(tick >= 6){
+
+                if (tick >= 6) {
+
                     frame++;
 
-                    if(frame >= 2){
+
+                    if (frame >= 2) {
+
                         frame = 0;
+
                         shooting = false;
                     }
 
+
                     tick = 0;
                 }
             }
 
-            case DEAD -> {
-                if(tick >= 10){
 
-                    if(frame < 5)
+            case DEAD -> {
+
+                if (tick >= 10) {
+
+                    if (frame < 5) {
+
                         frame++;
+                    }
+
 
                     tick = 0;
                 }
@@ -164,205 +296,337 @@ public class Player {
         }
     }
 
+
     // ================= SHOOT =================
 
-    public boolean shoot(){
+    public boolean shoot() {
 
-        if(dead) return false;
-        if(ammo <= 0) return false;
+        if (dead)
+            return false;
+
+
+        if (ammo <= 0)
+            return false;
+
 
         ammo--;
 
+
         shooting = true;
+
         state = State.SHOOT;
+
         frame = 0;
+
         tick = 0;
 
-        SoundManager.play("pistol.wav");
+
+        SoundManager.play(
+                "pistol.wav"
+        );
+
+
         return true;
     }
 
+
     // ================= RELOAD =================
 
-    public void reload(){
+    public void reload() {
 
-        if(ammo == MAG_SIZE) return;
-        if(reserveAmmo <= 0) return;
+        if (ammo == MAG_SIZE)
+            return;
 
-        int need = MAG_SIZE - ammo;
-        int load = Math.min(need, reserveAmmo);
+
+        if (reserveAmmo <= 0)
+            return;
+
+
+        int need =
+                MAG_SIZE - ammo;
+
+
+        int load =
+                Math.min(
+                        need,
+                        reserveAmmo
+                );
+
 
         ammo += load;
+
         reserveAmmo -= load;
 
-        SoundManager.play("reload.wav");
+
+        SoundManager.play(
+                "reload.wav"
+        );
     }
+
 
     // ================= DRAW =================
 
-    public void draw(Graphics2D g2){
+    public void draw(Graphics2D g2) {
 
-        if(sheet == null) return;
+        if (sheet == null)
+            return;
+
 
         int row = 0;
+
         int col = 0;
 
-        switch(state){
+
+        switch (state) {
 
             case IDLE -> {
 
-                if(direction == 0){
+                if (direction == 0) {
+
                     row = 0;
+
                     col = frame;
                 }
 
-                if(direction == 1){
+
+                if (direction == 1) {
+
                     row = 0;
+
                     col = 2 + frame;
                 }
 
-                if(direction == 2){
+
+                if (direction == 2) {
+
                     row = 0;
+
                     col = 4 + frame;
                 }
 
-                if(direction == 3){
+
+                if (direction == 3) {
+
                     row = 4;
+
                     col = 0;
                 }
             }
 
+
             case WALK -> {
 
-                if(direction == 0){
+                if (direction == 0) {
+
                     row = 1;
+
                     col = frame;
                 }
 
-                if(direction == 1){
+
+                if (direction == 1) {
+
                     row = 2;
+
                     col = frame;
                 }
 
-                if(direction == 2){
+
+                if (direction == 2) {
+
                     row = 3;
+
                     col = frame;
                 }
 
-                if(direction == 3){
+
+                if (direction == 3) {
+
                     row = 4;
+
                     col = frame;
                 }
             }
+
 
             case SHOOT -> {
 
-                if(direction == 0){
+                if (direction == 0) {
+
                     row = 1;
+
                     col = 4 + frame;
                 }
 
-                if(direction == 1){
+
+                if (direction == 1) {
+
                     row = 2;
+
                     col = 4 + frame;
                 }
 
-                if(direction == 2){
+
+                if (direction == 2) {
+
                     row = 3;
+
                     col = 4 + frame;
                 }
 
-                if(direction == 3){
+
+                if (direction == 3) {
+
                     row = 4;
+
                     col = 4 + frame;
                 }
             }
 
+
             case DEAD -> {
+
                 row = 5;
+
                 col = frame;
             }
         }
 
+
         g2.drawImage(
-            sheet,
-            x, y,
-            x + width, y + height,
-            col * 64,
-            row * 64,
-            (col + 1) * 64,
-            (row + 1) * 64,
-            null
+
+                sheet,
+
+                x,
+                y,
+
+                x + width,
+                y + height,
+
+                col * 64,
+                row * 64,
+
+                (col + 1) * 64,
+                (row + 1) * 64,
+
+                null
         );
     }
 
+
     // ================= DAMAGE =================
 
-    public void takeDamage(int dmg){
+    public void takeDamage(int dmg) {
 
-        if(dead) return;
+        if (dead)
+            return;
+
 
         health -= dmg;
 
-        if(health <= 0){
+
+        if (health <= 0) {
+
             health = 0;
+
             dead = true;
+
             state = State.DEAD;
+
             frame = 0;
+
             tick = 0;
         }
     }
 
-    public void heal(int amount){
+
+    // ================= HEAL =================
+
+    public void heal(int amount) {
 
         health += amount;
 
-        if(health > 100)
+
+        if (health > 100)
+
             health = 100;
     }
- // ================= RESPAWN =================
 
- // ================= RESPAWN =================
 
-    public void respawn(int spawnX, int spawnY){
+    // ================= RESPAWN =================
+
+    public void respawn(
+            int spawnX,
+            int spawnY
+    ) {
 
         x = spawnX;
+
         y = spawnY;
+
 
         health = 100;
 
+
         ammo = MAG_SIZE;
+
         reserveAmmo = 24;
 
+
         dead = false;
+
         shooting = false;
+
         moving = false;
+
 
         direction = 0;
 
+
         state = State.IDLE;
+
         frame = 0;
+
         tick = 0;
+
 
         footstepTimer = 0;
     }
+
+
     // ================= GETTERS =================
 
-    public Rectangle getBounds(){
+    public Rectangle getBounds() {
 
         return new Rectangle(
-            x + 16,
-            y + 20,
-            32,
-            40
+
+                x + 16,
+
+                y + 20,
+
+                32,
+
+                40
         );
     }
 
-    public int getDirection(){
+
+    public int getDirection() {
+
         return direction;
     }
 
-    public boolean isDead(){
+
+    public boolean isDead() {
+
         return dead;
+    }
+
+
+    // ================= INVENTORY =================
+
+    public Inventory getInventory() {
+
+        return inventory;
     }
 }
